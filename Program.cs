@@ -51,13 +51,14 @@ class Program
         }
 
         Directory.CreateDirectory(spanishPath);
-        await TranslateFilesRecursivelyAsync(englishPath, spanishPath);
+
+        await TranslateFilesRecursivelyAsync(englishPath, spanishPath, AskConfirmation("¿Quiere traducir el texto al Español? Este proceso puede llevar un par de minutos. (S/N): "));
 
         Console.WriteLine("El proceso ha terminado.");
         Console.ReadLine();
     }
 
-    static async Task TranslateFilesRecursivelyAsync(string sourcePath, string targetPath)
+    static async Task TranslateFilesRecursivelyAsync(string sourcePath, string targetPath, Boolean translate)
     {
         Directory.CreateDirectory(targetPath);
         
@@ -75,9 +76,8 @@ class Program
             {
                 lines[0] = lines[0].Replace("l_english:", "l_spanish:");
             }
-            
-            if (AskConfirmation("¿Quiere traducir el texto al Español? Este proceso puede llevar un par de minutos. (S/N): "))
-            {
+
+            if (translate) {
                 for (int i = 0; i < lines.Length; i++)
                 {
                     string line = lines[i];
@@ -114,7 +114,7 @@ class Program
             string targetSubDirName = subDirName.Replace("english", "spanish");
             string targetSubDirPath = Path.Combine(targetPath, targetSubDirName);
 
-            await TranslateFilesRecursivelyAsync(sourceSubDirPath, targetSubDirPath);
+            await TranslateFilesRecursivelyAsync(sourceSubDirPath, targetSubDirPath, translate);
         }
     }
 
