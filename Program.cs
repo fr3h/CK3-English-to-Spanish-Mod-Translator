@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
 
 class Program
@@ -69,43 +70,41 @@ class Program
             string targetFile = Path.Combine(targetPath, newFileName);
 
             string[] lines = File.ReadAllLines(file);
-            string[] translatedLines = new string[lines.Length];
 
             if (lines.Length > 0)
             {
                 lines[0] = lines[0].Replace("l_english:", "l_spanish:");
             }
-
-            for (int i = 0; i < lines.Length; i++)
+            
+            if (AskConfirmation("¿Quiere traducir el texto al Español? Este proceso puede llevar un par de minutos. (S/N): "))
             {
-                string line = lines[i];
-                Regex regex = new Regex(@"^(\s*[\w\d_-]+)\s*:\s*""(.*?)""\s*$");
-                Match match = regex.Match(line);
-
-                if (match.Success)
+                for (int i = 0; i < lines.Length; i++)
                 {
-                    string key = match.Groups[1].Value;
-                    string textToTranslate = match.Groups[2].Value;
+                    string line = lines[i];
+                    Regex regex = new Regex(@"^(\s*[\w\d_-]+)\s*:\s*""(.*?)""\s*$");
+                    Match match = regex.Match(line);
 
-                    VariableStorage storage = new VariableStorage();
-                    textToTranslate = ReplaceVariables(textToTranslate, storage);
+                    if (match.Success)
+                    {
+                        string key = match.Groups[1].Value;
+                        string textToTranslate = match.Groups[2].Value;
 
-                    Console.WriteLine($"Traduciendo: {textToTranslate}"); // Añade esta línea
-                    string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
-                    Console.WriteLine($"Traducido: {translatedText}"); // Añade esta línea
+                        VariableStorage storage = new VariableStorage();
+                        textToTranslate = ReplaceVariables(textToTranslate, storage);
 
-                    translatedText = RestoreVariables(translatedText, storage);
+                        Console.WriteLine($"Traduciendo: {textToTranslate}");
+                        string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
+                        Console.WriteLine($"Traducido: {translatedText}");
 
-                    // Reemplazar el texto original entre comillas con el texto traducido
-                    translatedLines[i] = $"{key}: \"{translatedText}\"";
-                }
-                else
-                {
-                    translatedLines[i] = line;
+                        translatedText = RestoreVariables(translatedText, storage);
+
+                        // Reemplazar el texto original entre comillas con el texto traducido
+                        lines[i] = $"{key}: \"{translatedText}\"";
+                    }
                 }
             }
 
-            File.WriteAllLines(targetFile, translatedLines);
+            File.WriteAllLines(targetFile, lines, Encoding.UTF8);
         }
 
         foreach (string sourceSubDirPath in Directory.GetDirectories(sourcePath))
@@ -136,6 +135,7 @@ class Program
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
             };
 
             using (Process process = new Process { StartInfo = startInfo, EnableRaisingEvents = true })
@@ -148,7 +148,7 @@ class Program
                 string output = await process.StandardOutput.ReadToEndAsync();
                 await tcs.Task;
 
-                return output.Trim();
+                return output;
             }
         }
         finally
