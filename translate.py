@@ -35,14 +35,12 @@ def main():
     text = sys.argv[1]
     from_lang = sys.argv[2]
     to_lang = sys.argv[3]
-    output_file = sys.argv[4]
 
     check_and_download_language_package(from_lang, to_lang)
 
     translated_text = translate.translate(text, from_lang, to_lang)
 
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write(translated_text)
+    print(translated_text, end="")
 
 if __name__ == "__main__":
     main()

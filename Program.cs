@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 
 class Program
 {
+    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(5); // Limita a 5 consultas en paralelo
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
@@ -120,27 +121,40 @@ class Program
 
     static async Task<string> TranslateWithArgosAsync(string text, string fromLang, string toLang)
     {
-        string scriptPath = "translate.py";
-        string outputFile = Path.GetTempFileName();
-        string args = $"\"{text}\" \"{fromLang}\" \"{toLang}\" \"{outputFile}\"";
+        await _translationSemaphore.WaitAsync();
 
-        ProcessStartInfo startInfo = new ProcessStartInfo
+        try
         {
-            FileName = "python",
-            Arguments = $"{scriptPath} {args}",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
+            string scriptPath = "translate.py";
+            string args = $"\"{text}\" \"{fromLang}\" \"{toLang}\"";
 
-        using (Process process = new Process { StartInfo = startInfo })
-        {
-            process.Start();
-            process.WaitForExit();
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = "python",
+                Arguments = $"{scriptPath} {args}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+
+            using (Process process = new Process { StartInfo = startInfo, EnableRaisingEvents = true })
+            {
+                var tcs = new TaskCompletionSource<bool>();
+
+                process.Exited += (sender, e) => tcs.SetResult(true);
+                process.Start();
+
+                string output = await process.StandardOutput.ReadToEndAsync();
+                await tcs.Task;
+
+                return output.Trim();
+            }
         }
-
-        string output = File.ReadAllText(outputFile);
-        File.Delete(outputFile);
-        return output.Trim();
+        finally
+        {
+            _translationSemaphore.Release();
+        }
     }
 
 
