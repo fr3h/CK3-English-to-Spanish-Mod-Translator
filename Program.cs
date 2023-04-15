@@ -89,7 +89,10 @@ class Program
                     VariableStorage storage = new VariableStorage();
                     textToTranslate = ReplaceVariables(textToTranslate, storage);
 
+                    Console.WriteLine($"Traduciendo: {textToTranslate}"); // Añade esta línea
                     string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
+                    Console.WriteLine($"Traducido: {translatedText}"); // Añade esta línea
+
                     translatedText = RestoreVariables(translatedText, storage);
 
                     // Reemplazar el texto original entre comillas con el texto traducido
@@ -118,13 +121,13 @@ class Program
     static async Task<string> TranslateWithArgosAsync(string text, string fromLang, string toLang)
     {
         string scriptPath = "translate.py";
-        string args = $"\"{text}\" \"{fromLang}\" \"{toLang}\"";
+        string outputFile = Path.GetTempFileName();
+        string args = $"\"{text}\" \"{fromLang}\" \"{toLang}\" \"{outputFile}\"";
 
         ProcessStartInfo startInfo = new ProcessStartInfo
         {
             FileName = "python",
             Arguments = $"{scriptPath} {args}",
-            RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -132,11 +135,14 @@ class Program
         using (Process process = new Process { StartInfo = startInfo })
         {
             process.Start();
-            string output = await process.StandardOutput.ReadToEndAsync();
             process.WaitForExit();
-            return output.Trim();
         }
+
+        string output = File.ReadAllText(outputFile);
+        File.Delete(outputFile);
+        return output.Trim();
     }
+
 
     static string ReplaceVariables(string text, VariableStorage storage)
     {
