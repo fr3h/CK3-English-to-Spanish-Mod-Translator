@@ -81,13 +81,15 @@ class Program
                 for (int i = 0; i < lines.Length; i++)
                 {
                     string line = lines[i];
-                    Regex regex = new Regex(@"^(\s*[\w\d_-]+)\s*:\s*""(.*?)""\s*$");
+                    Regex regex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$");
                     Match match = regex.Match(line);
 
                     if (match.Success)
                     {
-                        string key = match.Groups[1].Value;
-                        string textToTranslate = match.Groups[2].Value;
+                        Console.WriteLine($"Match: {line}");
+                        string key = match.Groups[2].Value;
+                        string twoPoints = match.Groups[3].Value;
+                        string textToTranslate = match.Groups[5].Value;
 
                         VariableStorage storage = new VariableStorage();
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
@@ -99,7 +101,7 @@ class Program
                         translatedText = RestoreVariables(translatedText, storage);
 
                         // Reemplazar el texto original entre comillas con el texto traducido
-                        lines[i] = $"{key}: \"{translatedText}\"";
+                        lines[i] = $" {key}{twoPoints} \"{translatedText}\"";
                     }
                 }
             }
@@ -160,7 +162,7 @@ class Program
 
     static string ReplaceVariables(string text, VariableStorage storage)
     {
-        Regex variableRegex = new Regex(@"({.*?}|\[.*?\]|\$\$.*?\$\$)");
+        Regex variableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+))");
         int counter = 0;
 
         return variableRegex.Replace(text, match =>
