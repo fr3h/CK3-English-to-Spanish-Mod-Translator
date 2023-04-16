@@ -70,7 +70,7 @@ class Program
             string newFileName = newFileNameWithoutExtension + ".yml";
             string targetFile = Path.Combine(targetPath, newFileName);
 
-            string[] lines = File.ReadAllLines(file);
+            string[] lines = File.ReadAllLines(file, Encoding.UTF8);
 
             if (lines.Length > 0)
             {
@@ -167,7 +167,7 @@ class Program
 
         return variableRegex.Replace(text, match =>
         {
-            string placeholder = $"[[VAR_{counter++}]]";
+            string placeholder = $"[VAR_{counter++}]";
             storage.Variables.Add(placeholder, match.Value);
             return placeholder;
         });

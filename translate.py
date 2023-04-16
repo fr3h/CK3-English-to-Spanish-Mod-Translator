@@ -36,6 +36,8 @@ def main():
     from_lang = sys.argv[2]
     to_lang = sys.argv[3]
 
+    sys.stdout.reconfigure(encoding='utf-8')
+
     check_and_download_language_package(from_lang, to_lang)
 
     translated_text = translate.translate(text, from_lang, to_lang)
