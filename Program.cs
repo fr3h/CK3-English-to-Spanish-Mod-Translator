@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 class Program
 {
-    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(5); // Limita a 5 consultas en paralelo
+    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(5); // Consultas en paralelo
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
@@ -78,6 +78,8 @@ class Program
             }
 
             if (translate) {
+                await SetupArgosTranslatorAsync("en", "es");
+
                 for (int i = 0; i < lines.Length; i++)
                 {
                     string line = lines[i];
@@ -159,6 +161,23 @@ class Program
         }
     }
 
+    static async Task SetupArgosTranslatorAsync(string fromLang, string toLang)
+    {
+        var setupTranslationProcess = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "python",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                ArgumentList = { "setup_translation.py", fromLang, toLang }
+            }
+        };
+
+        setupTranslationProcess.Start();
+        setupTranslationProcess.WaitForExitAsync();
+    }
 
     static string ReplaceVariables(string text, VariableStorage storage)
     {
