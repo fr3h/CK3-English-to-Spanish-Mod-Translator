@@ -1,12 +1,15 @@
+import os
+
+os.environ['ARGOS_DEVICE_TYPE'] = 'cuda'
+
 import sys
-import requests
-from argostranslate import package, translate
+from argostranslate import  translate
 
 def main():
     text = sys.argv[1]
     from_lang = sys.argv[2]
     to_lang = sys.argv[3]
-
+    
     sys.stdout.reconfigure(encoding='utf-8')
 
     translated_text = translate.translate(text, from_lang, to_lang)

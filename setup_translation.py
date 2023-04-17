@@ -1,6 +1,6 @@
 import sys
 import requests
-from argostranslate import package, translate
+from argostranslate import package
 
 def download_language_package(url):
     response = requests.get(url)

@@ -11,7 +11,7 @@ class Program
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
 
-    private static ActionBlock<string> translationActionBlock;
+    private static ActionBlock<string>? translationActionBlock;
     private static ConcurrentDictionary<string, string> translationCache = new ConcurrentDictionary<string, string>();
     private static readonly Regex LineRegex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$", RegexOptions.Compiled);
     private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+))", RegexOptions.Compiled);
@@ -101,7 +101,6 @@ class Program
 
             if (translate)
             {
-                Environment.SetEnvironmentVariable("ARGOS_DEVICE_TYPE", "auto");
                 await SetupArgosTranslatorAsync("en", "es");
 
                 for (int i = 0; i < lines.Length; i++)
@@ -119,15 +118,36 @@ class Program
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
 
                         Console.WriteLine($" - file: {fileName}\n    Traduciendo: {textToTranslate}");
+                        if (!translationCache.ContainsKey(textToTranslate))
+                        {
+                            translationActionBlock.Post(textToTranslate);
+                        }
+                    }
+                }
 
-                        string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string line = lines[i];
+                    Match match = LineRegex.Match(line);
 
-                        Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedText}\n");
+                    if (match.Success)
+                    {
+                        string key = match.Groups[2].Value;
+                        string twoPoints = match.Groups[3].Value;
+                        string textToTranslate = match.Groups[5].Value;
 
-                        translatedText = RestoreVariables(translatedText, storage);
+                        VariableStorage storage = new VariableStorage();
+                        textToTranslate = ReplaceVariables(textToTranslate, storage);
 
-                        // Reemplazar el texto original entre comillas con el texto traducido
-                        lines[i] = $" {key}{twoPoints} \"{translatedText}\"";
+                        if (translationCache.TryGetValue(textToTranslate, out string translatedText))
+                        {
+                            Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedText}\n");
+
+                            translatedText = RestoreVariables(translatedText, storage);
+
+                            // Reemplazar el texto original entre comillas con el texto traducido
+                            lines[i] = $" {key}{twoPoints} \"{translatedText}\"";
+                        }
                     }
                 }
             }
@@ -149,6 +169,7 @@ class Program
 
         await Task.WhenAll(dirTasks);
     }
+
 
     static async Task<string> TranslateWithArgosAsync(string text, string fromLang, string toLang)
     {
@@ -211,7 +232,7 @@ class Program
         };
 
         setupTranslationProcess.Start();
-        setupTranslationProcess.WaitForExitAsync();
+        await setupTranslationProcess.WaitForExitAsync();
     }
 
     static string ReplaceVariables(string text, VariableStorage storage)
