@@ -1,7 +1,3 @@
-import os
-
-os.environ['ARGOS_DEVICE_TYPE'] = 'cuda'
-
 import sys
 from argostranslate import  translate
 
