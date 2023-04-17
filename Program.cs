@@ -9,6 +9,9 @@ class Program
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
 
+    private static readonly Regex LineRegex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$", RegexOptions.Compiled);
+    private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+))", RegexOptions.Compiled);
+
     static async Task Main(string[] args)
     {
         Console.Write("Introduce la ruta de la carpeta del mod: ");
@@ -52,9 +55,15 @@ class Program
 
         Directory.CreateDirectory(spanishPath);
 
+        Stopwatch timer = new Stopwatch();
+        timer.Start();
+
         await TranslateFilesRecursivelyAsync(englishPath, spanishPath, AskConfirmation("¿Quiere traducir el texto al Español? Este proceso puede llevar un par de minutos. (S/N): "));
 
-        Console.WriteLine("El proceso ha terminado.");
+        timer.Stop();
+        TimeSpan elapsedTime = timer.Elapsed;
+
+        Console.WriteLine($"El proceso de traducción ha tardado: {elapsedTime}");
         Console.ReadLine();
     }
 
@@ -83,12 +92,10 @@ class Program
                 for (int i = 0; i < lines.Length; i++)
                 {
                     string line = lines[i];
-                    Regex regex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$");
-                    Match match = regex.Match(line);
+                    Match match = LineRegex.Match(line);
 
                     if (match.Success)
                     {
-                        Console.WriteLine($"Match: {line}");
                         string key = match.Groups[2].Value;
                         string twoPoints = match.Groups[3].Value;
                         string textToTranslate = match.Groups[5].Value;
@@ -96,9 +103,9 @@ class Program
                         VariableStorage storage = new VariableStorage();
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
 
-                        Console.WriteLine($"Traduciendo: {textToTranslate}");
+                        Console.WriteLine($" - file: {fileName}\n    Traduciendo: {textToTranslate}");
                         string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
-                        Console.WriteLine($"Traducido: {translatedText}");
+                        Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedText}\n");
 
                         translatedText = RestoreVariables(translatedText, storage);
 
@@ -181,10 +188,9 @@ class Program
 
     static string ReplaceVariables(string text, VariableStorage storage)
     {
-        Regex variableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+))");
         int counter = 0;
 
-        return variableRegex.Replace(text, match =>
+        return VariableRegex.Replace(text, match =>
         {
             string placeholder = $"[VAR_{counter++}]";
             storage.Variables.Add(placeholder, match.Value);
