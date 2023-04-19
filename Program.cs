@@ -59,19 +59,10 @@ class Program
 
         Directory.CreateDirectory(spanishPath);
 
-        translationActionBlock = new ActionBlock<string>(async text =>
-        {
-            string translatedText = await TranslateWithArgosAsync(text, "en", "es");
-            translationCache[text] = translatedText;
-        }, new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 3 });
-
         Stopwatch timer = new Stopwatch();
         timer.Start();
 
         await TranslateFilesRecursivelyAsync(englishPath, spanishPath, AskConfirmation("¿Quiere traducir el texto al Español? Este proceso puede llevar un par de minutos. (S/N): "));
-
-        translationActionBlock.Complete();
-        await translationActionBlock.Completion;
 
         timer.Stop();
         TimeSpan elapsedTime = timer.Elapsed;
@@ -93,7 +84,7 @@ class Program
             string targetFile = Path.Combine(targetPath, newFileName);
 
             string[] lines = File.ReadAllLines(file, Encoding.UTF8);
-
+            
             if (lines.Length > 0)
             {
                 lines[0] = lines[0].Replace("l_english:", "l_spanish:");
@@ -102,6 +93,8 @@ class Program
             if (translate)
             {
                 await SetupArgosTranslatorAsync("en", "es");
+
+                List<Task> translationTasks = new List<Task>();
 
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -120,10 +113,16 @@ class Program
                         Console.WriteLine($" - file: {fileName}\n    Traduciendo: {textToTranslate}");
                         if (!translationCache.ContainsKey(textToTranslate))
                         {
-                            translationActionBlock.Post(textToTranslate);
+                            translationTasks.Add(Task.Run(async () =>
+                            {
+                                string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
+                                translationCache[textToTranslate] = translatedText;
+                            }));
                         }
                     }
                 }
+
+                await Task.WhenAll(translationTasks);
 
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -139,7 +138,7 @@ class Program
                         VariableStorage storage = new VariableStorage();
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
 
-                        if (translationCache.TryGetValue(textToTranslate, out string translatedText))
+                        if (translationCache.TryGetValue(textToTranslate, out var translatedText))
                         {
                             Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedText}\n");
 
