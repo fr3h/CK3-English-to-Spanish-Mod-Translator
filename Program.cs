@@ -2,19 +2,19 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks.Dataflow;
 
 class Program
 {
-    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(3);
+    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(100);
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
+    private static int variablecounter = 0;
 
-    private static ActionBlock<string>? translationActionBlock;
     private static ConcurrentDictionary<string, string> translationCache = new ConcurrentDictionary<string, string>();
     private static readonly Regex LineRegex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$", RegexOptions.Compiled);
     private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+))", RegexOptions.Compiled);
+    private static readonly Regex NoTextRegex = new Regex(@"^(?:\[\d+\])+$", RegexOptions.Compiled);
 
     static async Task Main(string[] args)
     {
@@ -93,7 +93,8 @@ class Program
             if (translate)
             {
                 await SetupArgosTranslatorAsync("en", "es");
-
+                Environment.SetEnvironmentVariable("ARGOS_DEVICE_TYPE", "cuda");
+                VariableStorage storage = new VariableStorage();
                 List<Task> translationTasks = new List<Task>();
 
                 for (int i = 0; i < lines.Length; i++)
@@ -107,8 +108,12 @@ class Program
                         string twoPoints = match.Groups[3].Value;
                         string textToTranslate = match.Groups[5].Value;
 
-                        VariableStorage storage = new VariableStorage();
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
+
+                        if (NoTextRegex.IsMatch(textToTranslate))
+                        {
+                            continue;
+                        }
 
                         Console.WriteLine($" - file: {fileName}\n    Traduciendo: {textToTranslate}");
                         if (!translationCache.ContainsKey(textToTranslate))
@@ -135,16 +140,12 @@ class Program
                         string twoPoints = match.Groups[3].Value;
                         string textToTranslate = match.Groups[5].Value;
 
-                        VariableStorage storage = new VariableStorage();
-                        textToTranslate = ReplaceVariables(textToTranslate, storage);
-
                         if (translationCache.TryGetValue(textToTranslate, out var translatedText))
                         {
                             Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedText}\n");
 
                             translatedText = RestoreVariables(translatedText, storage);
 
-                            // Reemplazar el texto original entre comillas con el texto traducido
                             lines[i] = $" {key}{twoPoints} \"{translatedText}\"";
                         }
                     }
@@ -236,11 +237,9 @@ class Program
 
     static string ReplaceVariables(string text, VariableStorage storage)
     {
-        int counter = 0;
-
         return VariableRegex.Replace(text, match =>
         {
-            string placeholder = $"[VAR_{counter++}]";
+            string placeholder = $"[{variablecounter++}]";
             storage.Variables.Add(placeholder, match.Value);
             return placeholder;
         });
