@@ -104,8 +104,6 @@ class Program
 
                     if (match.Success)
                     {
-                        string key = match.Groups[2].Value;
-                        string twoPoints = match.Groups[3].Value;
                         string textToTranslate = match.Groups[5].Value;
 
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
