@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="IronPython" Version="3.4.0" />
+    <PackageReference Include="System.Threading.Tasks.Dataflow" Version="7.0.0" />
   </ItemGroup>
 
 </Project>

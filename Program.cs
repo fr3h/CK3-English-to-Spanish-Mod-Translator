@@ -2,10 +2,10 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks.Dataflow;
 
 class Program
 {
-    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(100);
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
@@ -95,7 +95,7 @@ class Program
                 await SetupArgosTranslatorAsync("en", "es");
                 Environment.SetEnvironmentVariable("ARGOS_DEVICE_TYPE", "cuda");
                 VariableStorage storage = new VariableStorage();
-                List<Task> translationTasks = new List<Task>();
+                var linesToTranslate = new ConcurrentBag<Tuple<int, string, string>>();
 
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -104,6 +104,7 @@ class Program
 
                     if (match.Success)
                     {
+                        string key = match.Groups[2].Value;
                         string textToTranslate = match.Groups[5].Value;
 
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
@@ -116,16 +117,34 @@ class Program
                         Console.WriteLine($" - file: {fileName}\n    Traduciendo: {textToTranslate}");
                         if (!translationCache.ContainsKey(textToTranslate))
                         {
-                            translationTasks.Add(Task.Run(async () =>
-                            {
-                                string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
-                                translationCache[textToTranslate] = translatedText;
-                            }));
+                            linesToTranslate.Add(Tuple.Create(i, key, textToTranslate));
                         }
                     }
                 }
 
-                await Task.WhenAll(translationTasks);
+                var executionOptions = new ExecutionDataflowBlockOptions
+                {
+                    MaxDegreeOfParallelism = Environment.ProcessorCount
+                };
+
+                var translationBlock = new ActionBlock<Tuple<int, string, string>>(
+                    async lineTuple =>
+                    {
+                        int lineNumber = lineTuple.Item1;
+                        string key = lineTuple.Item2;
+                        string textToTranslate = lineTuple.Item3;
+
+                        string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
+                        translationCache[textToTranslate] = translatedText;
+                    }, executionOptions);
+
+                foreach (var lineTuple in linesToTranslate)
+                {
+                    translationBlock.Post(lineTuple);
+                }
+
+                translationBlock.Complete();
+                await translationBlock.Completion;
 
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -176,42 +195,61 @@ class Program
             return cachedTranslation;
         }
 
-        await _translationSemaphore.WaitAsync();
+        string scriptPath = "translate.py";
+        string args = $"\"{text}\" \"{fromLang}\" \"{toLang}\"";
 
-        try
+        ProcessStartInfo startInfo = new ProcessStartInfo
         {
-            string scriptPath = "translate.py";
-            string args = $"\"{text}\" \"{fromLang}\" \"{toLang}\"";
+            FileName = "python",
+            Arguments = $"{scriptPath} {args}",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+        };
 
-            ProcessStartInfo startInfo = new ProcessStartInfo
+        using (Process process = await Task.Run(() => new Process { StartInfo = startInfo }))
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            int completedEvents = 0;
+            StringBuilder outputBuilder = new StringBuilder();
+
+            DataReceivedEventHandler handler = (s, e) =>
             {
-                FileName = "python",
-                Arguments = $"{scriptPath} {args}",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
+                if (e.Data == null)
+                {
+                    if (Interlocked.Increment(ref completedEvents) == 2)
+                    {
+                        tcs.TrySetResult(true);
+                    }
+                }
+                else
+                {
+                    outputBuilder.AppendLine(e.Data);
+                }
             };
 
-            using (Process process = await Task.Run(() => new Process { StartInfo = startInfo, EnableRaisingEvents = true }))
+            process.OutputDataReceived += handler;
+            process.Exited += (sender, e) =>
             {
-                var tcs = new TaskCompletionSource<bool>();
+                if (Interlocked.Increment(ref completedEvents) == 2)
+                {
+                    tcs.TrySetResult(true);
+                }
+            };
+            process.EnableRaisingEvents = true;
 
-                process.Exited += (sender, e) => tcs.SetResult(true);
-                process.Start();
+            process.Start();
+            process.BeginOutputReadLine();
 
-                string output = await process.StandardOutput.ReadToEndAsync();
-                await tcs.Task;
+            await tcs.Task;
 
-                translationCache[text] = output;
+            process.OutputDataReceived -= handler;
 
-                return output;
-            }
-        }
-        finally
-        {
-            _translationSemaphore.Release();
+            string translatedText = outputBuilder.ToString().Trim();
+            translationCache[text] = translatedText;
+            return translatedText;
         }
     }
 
