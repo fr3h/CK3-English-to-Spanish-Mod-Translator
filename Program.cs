@@ -13,7 +13,7 @@ class Program
 
     private static ConcurrentDictionary<string, string> translationCache = new ConcurrentDictionary<string, string>();
     private static readonly Regex LineRegex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$", RegexOptions.Compiled);
-    private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+))", RegexOptions.Compiled);
+    private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+)|(\w+(_\w+)*_\d+))", RegexOptions.Compiled);
     private static readonly Regex NoTextRegex = new Regex(@"^(?:\[\d+\])+$", RegexOptions.Compiled);
 
     static async Task Main(string[] args)
