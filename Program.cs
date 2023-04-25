@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 class Program
 {
-    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(100);
+    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(Environment.ProcessorCount * 2);
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
@@ -57,12 +57,18 @@ class Program
             Directory.Delete(spanishPath, true);
         }
 
-        Directory.CreateDirectory(spanishPath);
+        Boolean translate = false;
+        if (AskConfirmation("¿Quiere traducir el texto al Español? Este proceso puede llevar un par de minutos. (S/N): "))
+        {
+            Environment.SetEnvironmentVariable("ARGOS_DEVICE_TYPE", "cuda");
+            await SetupArgosTranslatorAsync("en", "es");
+            translate = true;
+        }
 
         Stopwatch timer = new Stopwatch();
         timer.Start();
 
-        await TranslateFilesRecursivelyAsync(englishPath, spanishPath, AskConfirmation("¿Quiere traducir el texto al Español? Este proceso puede llevar un par de minutos. (S/N): "));
+        await TranslateFilesRecursivelyAsync(englishPath, spanishPath, translate);
 
         timer.Stop();
         TimeSpan elapsedTime = timer.Elapsed;
@@ -92,8 +98,6 @@ class Program
 
             if (translate)
             {
-                await SetupArgosTranslatorAsync("en", "es");
-                Environment.SetEnvironmentVariable("ARGOS_DEVICE_TYPE", "cuda");
                 VariableStorage storage = new VariableStorage();
                 List<Task> translationTasks = new List<Task>();
 
