@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -11,9 +10,8 @@ class Program
     const string SpanishFolderName = "spanish";
     private static int variablecounter = 0;
 
-    private static ConcurrentDictionary<string, string> translationCache = new ConcurrentDictionary<string, string>();
     private static readonly Regex LineRegex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$", RegexOptions.Compiled);
-    private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+)|(\w+(_\w+)*_\d+))", RegexOptions.Compiled);
+    private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+)|(\w+(_\w+)*_\d+)|(""))", RegexOptions.Compiled);
     private static readonly Regex NoTextRegex = new Regex(@"^(?:\[\d+\])+$", RegexOptions.Compiled);
 
     static async Task Main(string[] args)
@@ -99,7 +97,7 @@ class Program
             if (translate)
             {
                 VariableStorage storage = new VariableStorage();
-                List<Task> translationTasks = new List<Task>();
+                StringBuilder sb = new StringBuilder();
 
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -117,21 +115,17 @@ class Program
                             continue;
                         }
 
-                        Console.WriteLine($" - file: {fileName}\n    Traduciendo: {textToTranslate}");
-                        if (!translationCache.ContainsKey(textToTranslate))
-                        {
-                            translationTasks.Add(Task.Run(async () =>
-                            {
-                                string translatedText = await TranslateWithArgosAsync(textToTranslate, "en", "es");
-                                translationCache[textToTranslate] = translatedText;
-                            }));
-                        }
+                        sb.AppendLine(textToTranslate);
                     }
                 }
 
-                await Task.WhenAll(translationTasks);
+                Console.WriteLine($" - file: {fileName}\n    Traduciendo...");
+                string allText = sb.ToString();
+                string translatedText = await TranslateWithArgosAsync(allText, "en", "es");
 
-                for (int i = 0; i < lines.Length; i++)
+                string[] translatedLines = translatedText.Split(Environment.NewLine);
+
+                for (int i = 0, j = 0; i < lines.Length; i++)
                 {
                     string line = lines[i];
                     Match match = LineRegex.Match(line);
@@ -140,15 +134,13 @@ class Program
                     {
                         string key = match.Groups[2].Value;
                         string twoPoints = match.Groups[3].Value;
-                        string textToTranslate = match.Groups[5].Value;
 
-                        if (translationCache.TryGetValue(textToTranslate, out var translatedText))
+                        if (j < translatedLines.Length)
                         {
-                            Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedText}\n");
-
-                            translatedText = RestoreVariables(translatedText, storage);
-
-                            lines[i] = $" {key}{twoPoints} \"{translatedText}\"";
+                            string translatedLine = RestoreVariables(translatedLines[j], storage);
+                            Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedLine}\n");
+                            lines[i] = $" {key}{twoPoints} \"{translatedLine}\"";
+                            j++;
                         }
                     }
                 }
@@ -175,11 +167,6 @@ class Program
 
     static async Task<string> TranslateWithArgosAsync(string text, string fromLang, string toLang)
     {
-        if (translationCache.TryGetValue(text, out string cachedTranslation))
-        {
-            return cachedTranslation;
-        }
-
         await _translationSemaphore.WaitAsync();
 
         try
@@ -206,9 +193,15 @@ class Program
                 process.Start();
 
                 string output = await process.StandardOutput.ReadToEndAsync();
-                await tcs.Task;
+                string errorOutput = await process.StandardError.ReadToEndAsync();
 
-                translationCache[text] = output;
+                if (!string.IsNullOrEmpty(errorOutput))
+                {
+                    Console.WriteLine("Error en el proceso de Python:");
+                    Console.WriteLine(errorOutput);
+                }
+
+                await tcs.Task;
 
                 return output;
             }

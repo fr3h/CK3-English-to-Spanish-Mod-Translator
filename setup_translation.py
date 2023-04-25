@@ -1,10 +1,5 @@
 import sys
-import requests
 from argostranslate import package
-
-def download_language_package(url):
-    response = requests.get(url)
-    response.raise_for_status()
 
 def check_and_download_language_package(from_code, to_code):
     package.update_package_index()
