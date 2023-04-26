@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 class Program
 {
-    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(Environment.ProcessorCount * 2);
+    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(Environment.ProcessorCount);
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
@@ -138,12 +138,12 @@ class Program
                         if (j < translatedLines.Length)
                         {
                             string translatedLine = RestoreVariables(translatedLines[j], storage);
-                            Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedLine}\n");
                             lines[i] = $" {key}{twoPoints} \"{translatedLine}\"";
                             j++;
                         }
                     }
                 }
+                Console.WriteLine($" + file: {fileName}\n    Traducción finalizada.\n");
             }
 
             File.WriteAllLines(targetFile, lines, Encoding.UTF8);
