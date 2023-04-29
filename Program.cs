@@ -138,12 +138,12 @@ class Program
                         if (j < translatedLines.Length)
                         {
                             string translatedLine = RestoreVariables(translatedLines[j], storage);
-                            Console.WriteLine($" + file: {fileName}\n    Traducido: {translatedLine}\n");
                             lines[i] = $" {key}{twoPoints} \"{translatedLine}\"";
                             j++;
                         }
                     }
                 }
+                Console.WriteLine($" + file: {fileName}\n    Traducción finalizada.\n");
             }
 
             File.WriteAllLines(targetFile, lines, Encoding.UTF8);
