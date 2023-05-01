@@ -78,82 +78,136 @@ class Program
     {
         Directory.CreateDirectory(targetPath);
 
-        var fileTasks = Directory.GetFiles(sourcePath).Select(async file =>
+        var allFilePaths = Directory.GetFiles(sourcePath, "*.yml", SearchOption.AllDirectories).ToList();
+
+        if (translate)
+        {
+            int groupSize = (int)Math.Ceiling(allFilePaths.Count / (double)_translationSemaphore.CurrentCount);
+
+            var fileGroups = new List<List<string>>();
+
+            for (int i = 0; i < allFilePaths.Count; i += groupSize)
+            {
+                fileGroups.Add(allFilePaths.GetRange(i, Math.Min(groupSize, allFilePaths.Count - i)));
+            }
+
+            var groupTasks = fileGroups.Select(async group =>
+            {
+                await TranslateFileGroupAsync(group, sourcePath, targetPath);
+            });
+
+            await Task.WhenAll(groupTasks);
+        }
+        else
+        {
+            var fileTasks = allFilePaths.Select(async file =>
+            {
+                string fileName = Path.GetFileName(file);
+                string newFileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName).Replace("english", "spanish");
+                string newFileName = newFileNameWithoutExtension + ".yml";
+                string relativePath = Path.GetRelativePath(sourcePath, file);
+                string targetFile = Path.Combine(targetPath, relativePath).Replace("english", "spanish");
+
+                string targetFileDirectory = Path.GetDirectoryName(targetFile);
+                Directory.CreateDirectory(targetFileDirectory);
+
+                string[] lines = File.ReadAllLines(file, Encoding.UTF8);
+
+                if (lines.Length > 0)
+                {
+                    lines[0] = lines[0].Replace("l_english:", "l_spanish:");
+                }
+
+                File.WriteAllLines(targetFile, lines, Encoding.UTF8);
+            });
+
+            await Task.WhenAll(fileTasks);
+        }
+    }
+
+    static async Task TranslateFileGroupAsync(List<string> files,string sourcePath, string targetPath)
+    {
+        StringBuilder sb = new StringBuilder();
+        Dictionary<string, (string FileName, int LineStart, int LineEnd, VariableStorage Storage, string[] OriginalLines)> fileMarkers = new Dictionary<string, (string FileName, int LineStart, int LineEnd, VariableStorage Storage, string[] OriginalLines)>();
+
+        int lineCounter = 0;
+
+        foreach (string file in files)
         {
             string fileName = Path.GetFileName(file);
-
-            string newFileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName).Replace("english", "spanish");
-            string newFileName = newFileNameWithoutExtension + ".yml";
-            string targetFile = Path.Combine(targetPath, newFileName);
-
             string[] lines = File.ReadAllLines(file, Encoding.UTF8);
-            
+
             if (lines.Length > 0)
             {
                 lines[0] = lines[0].Replace("l_english:", "l_spanish:");
             }
 
-            if (translate)
+            int startLine = lineCounter;
+            int endLine = lineCounter;
+
+            VariableStorage variableStorage = new VariableStorage();
+
+            for (int i = 0; i < lines.Length; i++)
             {
-                VariableStorage storage = new VariableStorage();
-                StringBuilder sb = new StringBuilder();
+                string line = lines[i];
+                Match match = LineRegex.Match(line);
 
-                for (int i = 0; i < lines.Length; i++)
+                if (match.Success)
                 {
-                    string line = lines[i];
-                    Match match = LineRegex.Match(line);
-
-                    if (match.Success)
-                    {
-                        string textToTranslate = match.Groups[5].Value;
-                        textToTranslate = ReplaceVariables(textToTranslate, storage);
-                        sb.AppendLine(textToTranslate);
-                    }
+                    string textToTranslate = match.Groups[5].Value;
+                    string replacedText = ReplaceVariables(textToTranslate, variableStorage);
+                    sb.AppendLine(replacedText);
+                    endLine = lineCounter;
+                    lineCounter++;
                 }
-
-                Console.WriteLine($" - file: {fileName}\n    Traduciendo...");
-                string allText = sb.ToString();
-                string translatedText = await TranslateWithArgosAsync(allText, "en", "es");
-
-                string[] translatedLines = translatedText.Split(Environment.NewLine);
-
-                for (int i = 0, j = 0; i < lines.Length; i++)
-                {
-                    string line = lines[i];
-                    Match match = LineRegex.Match(line);
-
-                    if (match.Success)
-                    {
-                        string key = match.Groups[2].Value;
-                        string twoPoints = match.Groups[3].Value;
-
-                        if (j < translatedLines.Length)
-                        {
-                            string translatedLine = RestoreVariables(translatedLines[j], storage);
-                            lines[i] = $" {key}{twoPoints} \"{translatedLine}\"";
-                            j++;
-                        }
-                    }
-                }
-                Console.WriteLine($" + file: {fileName}\n    Traducción finalizada.\n");
             }
 
-            File.WriteAllLines(targetFile, lines, Encoding.UTF8);
-        });
+            string relativePath = Path.GetRelativePath(sourcePath, file);
 
-        await Task.WhenAll(fileTasks);
+            fileMarkers.Add(relativePath, (FileName: fileName, LineStart: startLine, LineEnd: endLine, Storage: variableStorage, OriginalLines: lines));
+        }
 
-        var dirTasks = Directory.GetDirectories(sourcePath).Select(async sourceSubDirPath =>
+        string allText = sb.ToString();
+        string translatedText = await TranslateWithArgosAsync(allText, "en", "es");
+        string[] translatedLines = translatedText.Split(Environment.NewLine);
+
+        foreach (var entry in fileMarkers)
         {
-            string subDirName = Path.GetFileName(sourceSubDirPath);
+            string relativePath = entry.Key;
+            string newFileName = Path.GetFileNameWithoutExtension(entry.Value.FileName).Replace("english", "spanish") + ".yml";
 
-            string targetSubDirName = subDirName.Replace("english", "spanish");
-            string targetSubDirPath = Path.Combine(targetPath, targetSubDirName);
+            string updatedRelativePath = Path.Combine(Path.GetDirectoryName(relativePath), newFileName);
+            string targetFile = Path.Combine(targetPath, updatedRelativePath);
+            string targetFileDirectory = Path.GetDirectoryName(targetFile);
+            Directory.CreateDirectory(targetFileDirectory);
+            
 
-            await TranslateFilesRecursivelyAsync(sourceSubDirPath, targetSubDirPath, translate);
-        });
+            int startLine = entry.Value.LineStart;
+            int endLine = entry.Value.LineEnd;
+            VariableStorage variableStorage = entry.Value.Storage;
+            string[] originalLines = entry.Value.OriginalLines;
 
-        await Task.WhenAll(dirTasks);
+            var translatedFileLines = translatedLines.Skip(startLine).Take(endLine - startLine + 1).ToArray();
+
+            int translatedIndex = 0;
+
+            for (int i = 0; i < originalLines.Length; i++)
+            {
+                string line = originalLines[i];
+                Match match = LineRegex.Match(line);
+
+                if (match.Success)
+                {
+                    string key = match.Groups[2].Value;
+                    string twoPoints = match.Groups[3].Value;
+                    string translatedLine = $" {key}{twoPoints} \"{RestoreVariables(translatedFileLines[translatedIndex], variableStorage)}\"";
+                    originalLines[i] = translatedLine;
+                    translatedIndex++;
+                }
+            }
+
+            File.WriteAllLines(targetFile, originalLines, Encoding.UTF8);
+        }
     }
 
 
