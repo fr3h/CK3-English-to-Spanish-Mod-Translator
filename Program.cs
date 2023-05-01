@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 class Program
 {
-    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(Environment.ProcessorCount * 2);
+    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(Environment.ProcessorCount);
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
@@ -12,7 +12,6 @@ class Program
 
     private static readonly Regex LineRegex = new Regex(@"^(\s+)([\w\.-]+:)(\d+)?(\s+)""(.*?)""\s*$", RegexOptions.Compiled);
     private static readonly Regex VariableRegex = new Regex(@"(\[.*?\]|(\$[^$]+?\$)|(#\w+)|(\w+(_\w+)*_\d+)|(""))", RegexOptions.Compiled);
-    private static readonly Regex NoTextRegex = new Regex(@"^(?:\[\d+\])+$", RegexOptions.Compiled);
 
     static async Task Main(string[] args)
     {
@@ -107,14 +106,7 @@ class Program
                     if (match.Success)
                     {
                         string textToTranslate = match.Groups[5].Value;
-
                         textToTranslate = ReplaceVariables(textToTranslate, storage);
-
-                        if (NoTextRegex.IsMatch(textToTranslate))
-                        {
-                            continue;
-                        }
-
                         sb.AppendLine(textToTranslate);
                     }
                 }
