@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 class Program
 {
-    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim(Environment.ProcessorCount);
+    private static SemaphoreSlim _translationSemaphore = new SemaphoreSlim((int)Math.Round(Environment.ProcessorCount * 0.75));
     const string LocalizationFolderName = "localization";
     const string EnglishFolderName = "english";
     const string SpanishFolderName = "spanish";
@@ -82,13 +82,23 @@ class Program
 
         if (translate)
         {
-            int groupSize = (int)Math.Ceiling(allFilePaths.Count / (double)_translationSemaphore.CurrentCount);
+            var sortedFilesWithSize = allFilePaths
+                .Select(file => (FilePath: file, FileSize: new FileInfo(file).Length))
+                .OrderByDescending(file => file.FileSize)
+                .ToList();
 
-            var fileGroups = new List<List<string>>();
+            var fileGroups = Enumerable.Range(0, _translationSemaphore.CurrentCount)
+                .Select(_ => new List<string>())
+                .ToList();
 
-            for (int i = 0; i < allFilePaths.Count; i += groupSize)
+            for (int i = 0; i < sortedFilesWithSize.Count; i++)
             {
-                fileGroups.Add(allFilePaths.GetRange(i, Math.Min(groupSize, allFilePaths.Count - i)));
+                int groupIndex = i % (2 * _translationSemaphore.CurrentCount - 2);
+                if (groupIndex >= _translationSemaphore.CurrentCount)
+                {
+                    groupIndex = 2 * _translationSemaphore.CurrentCount - groupIndex - 2;
+                }
+                fileGroups[groupIndex].Add(sortedFilesWithSize[i].FilePath);
             }
 
             var groupTasks = fileGroups.Select(async group =>
