@@ -91,6 +91,8 @@ class Program
                 .Select(_ => new List<string>())
                 .ToList();
 
+            long[] groupSizes = new long[_translationSemaphore.CurrentCount];
+
             for (int i = 0; i < sortedFilesWithSize.Count; i++)
             {
                 int groupIndex = i % (2 * _translationSemaphore.CurrentCount - 2);
@@ -99,7 +101,16 @@ class Program
                     groupIndex = 2 * _translationSemaphore.CurrentCount - groupIndex - 2;
                 }
                 fileGroups[groupIndex].Add(sortedFilesWithSize[i].FilePath);
+                groupSizes[groupIndex] += sortedFilesWithSize[i].FileSize;
             }
+
+            long total = 0;
+            for (int i = 0; i < _translationSemaphore.CurrentCount; i++)
+            {
+                Console.WriteLine("Group {0} weight: {1} KB", i + 1, groupSizes[i] / 1024);
+                total += groupSizes[i];
+            }
+            Console.WriteLine("Total weight: {0} Bytes", total);
 
             var groupTasks = fileGroups.Select(async group =>
             {
@@ -228,7 +239,7 @@ class Program
         try
         {
             string scriptPath = "translate.py";
-            string args = $"\"{text}\" \"{fromLang}\" \"{toLang}\"";
+            string args = $"\"{fromLang}\" \"{toLang}\"";
 
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
@@ -238,6 +249,7 @@ class Program
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = true,
                 StandardOutputEncoding = Encoding.UTF8,
             };
 
@@ -247,6 +259,13 @@ class Program
 
                 process.Exited += (sender, e) => tcs.SetResult(true);
                 process.Start();
+
+                using (StreamWriter writer = process.StandardInput)
+                {
+                    await writer.WriteAsync(text);
+                    await writer.FlushAsync();
+                    writer.Close();
+                }
 
                 string output = await process.StandardOutput.ReadToEndAsync();
                 string errorOutput = await process.StandardError.ReadToEndAsync();
